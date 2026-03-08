@@ -4,12 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Academia Supuestos - Canarias</title>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <style>
         body { margin: 0; background: #09090f; color: #f0ece0; font-family: system-ui, -apple-system, sans-serif; }
+        * { box-sizing: border-box; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #09090f; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
     </style>
 </head>
 <body>
@@ -18,51 +22,61 @@
     <script type="text/babel">
         const { useState, useRef, useEffect } = React;
 
+        // --- CONFIGURACIÓN BASE ---
         const CORPS = {
-          canaria: { id: "canaria", name: "Policía Canaria", color: "#FFD700", accent: "#FF6B00", badge: "🛡️", emblem: "GOBIERNO DE CANARIAS" },
-          local:   { id: "local",   name: "Policía Local",   color: "#4FC3F7", accent: "#0288D1", badge: "⚖️", emblem: "CABILDO INSULAR" },
-        };
-
-        const DEMO = {
-          id: 0, titulo: "Supuesto Demo — Alteración del Orden Público",
-          enunciado: "Son las 23:47 horas del sábado 15 de marzo. La Central de Comunicaciones recibe una llamada alertando de una pelea multitudinaria en la Plaza del Mercado. Al llegar a la escena, los agentes encuentran a un grupo de aproximadamente 20 personas involucradas en una reyerta. Hay tres personas lesionadas visibles. Uno de los implicados porta lo que parece ser una botella rota.",
-          preguntas: [
-            { id:1, texto:"¿Cuál debe ser la primera acción del agente al llegar a la escena?", opciones:["A) Identificar a todos los presentes","B) Evaluar la situación y solicitar refuerzos","C) Proceder a la detención del individuo con la botella","D) Acordonar el perímetro sin intervenir"], correcta:1, explicacion:"La evaluación situacional es prioritaria según el protocolo de actuación policial." },
-            { id:2, texto:"Respecto al individuo con la botella rota, el agente debe:", opciones:["A) Ignorarlo hasta controlar al resto","B) Dispararle como medida preventiva","C) Neutralizar la amenaza de forma proporcional","D) Llamar a los servicios médicos antes de intervenir"], correcta:2, explicacion:"El principio de proporcionalidad obliga al agente a identificar y neutralizar la amenaza más grave primero." },
-            { id:3, texto:"Las personas lesionadas deben ser atendidas:", opciones:["A) Solo por el agente con primeros auxilios","B) Solicitando asistencia sanitaria al 112","C) Solo tras detener a todos los implicados","D) Por los testigos civiles"], correcta:1, explicacion:"La obligación de socorro es un deber legal y ético. Se debe solicitar asistencia médica inmediata." },
-          ],
+          canaria: { id: "canaria", name: "Policía Canaria", color: "#FFD700", accent: "#FF6B00", badge: "🛡️" },
+          local:   { id: "local",   name: "Policía Local",   color: "#4FC3F7", accent: "#0288D1", badge: "⚖️" },
         };
 
         const STORAGE_KEY = (corp) => `academia_supuestos_${corp}`;
-        const loadSupuestos = (corp) => { try { const raw = localStorage.getItem(STORAGE_KEY(corp)); return raw ? JSON.parse(raw) : []; } catch { return []; } };
+        const API_KEY_STORAGE = "anthropic_api_key";
+
+        // Funciones de guardado en el navegador
+        const loadSupuestos = (corp) => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY(corp))) || []; } catch { return []; } };
         const saveSupuestos = (corp, list) => { try { localStorage.setItem(STORAGE_KEY(corp), JSON.stringify(list)); } catch {} };
+        const getApiKey = () => localStorage.getItem(API_KEY_STORAGE) || "";
+        const saveApiKey = (key) => localStorage.setItem(API_KEY_STORAGE, key);
 
-        const MARCO_NORMATIVO = `Marco normativo aplicable: Constitución Española, LOFCS 2/1986, LECrim, LSC 4/2015, Código Penal, y normativa canaria (Ley 6/1997).`;
+        // --- COMUNICACIÓN CON LA IA (CLAUDE) ---
+        const callClaude = async (system, promptText) => {
+            const apiKey = getApiKey();
+            if (!apiKey) throw new Error("Falta la Clave API. Configúrala en el botón ⚙️ de la Biblioteca.");
 
-        function LoadingDots() {
-          return (
-            <span style={{ display:"inline-flex", gap:4, alignItems:"center" }}>
-              {[0,1,2].map(i => (
-                <span key={i} style={{ width:5, height:5, borderRadius:"50%", background:"currentColor", display:"inline-block" }} />
-              ))}
-            </span>
-          );
-        }
+            const res = await fetch("https://api.anthropic.com/v1/messages", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-api-key": apiKey,
+                    "anthropic-version": "2023-06-01",
+                    "anthropic-dangerous-direct-browser-access": "true"
+                },
+                body: JSON.stringify({
+                    model: "claude-3-haiku-20240307", // Modelo rápido para lectura
+                    max_tokens: 4000,
+                    system: system,
+                    messages: [{ role: "user", content: promptText }]
+                })
+            });
 
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error?.message || "Error al conectar con la IA");
+            }
+            const data = await res.json();
+            return data.content[0].text;
+        };
+
+        // --- PANTALLA INICIAL ---
         function CorpSelector({ onSelect }) {
-          const [hov, setHov] = useState(null);
           return (
-            <div style={{ minHeight:"100vh", background:"#09090f", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"2rem" }}>
-              <div style={{ textAlign:"center", marginBottom:"3.5rem" }}>
-                <h1 style={{ fontSize:"2.5rem", color:"#f5f0e8", marginBottom:"1rem" }}>Academia · Islas Canarias</h1>
-                <p style={{ color:"#666" }}>Selecciona tu cuerpo policial para comenzar</p>
-              </div>
+            <div style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"2rem" }}>
+              <h1 style={{ fontSize:"2.5rem", color:"#f5f0e8", marginBottom:"2rem", textAlign:"center" }}>Academia · Islas Canarias</h1>
               <div style={{ display:"flex", gap:"1.5rem", flexWrap:"wrap", justifyContent:"center" }}>
                 {Object.values(CORPS).map(corp => (
                   <button key={corp.id} onClick={() => onSelect(corp.id)}
-                    style={{ background: "rgba(255,255,255,0.025)", border:`1px solid ${corp.color}`, borderRadius:6, padding:"2.5rem 2rem", cursor:"pointer", color:"#fff", minWidth:240 }}>
-                    <div style={{ fontSize:"2.5rem" }}>{corp.badge}</div>
-                    <div style={{ fontSize:"1.25rem", fontWeight:"600" }}>{corp.name}</div>
+                    style={{ background: "rgba(255,255,255,0.05)", border:`1px solid ${corp.color}`, borderRadius:8, padding:"2rem", cursor:"pointer", color:"#fff", width:240, transition:"0.2s" }}>
+                    <div style={{ fontSize:"3rem", marginBottom:"1rem" }}>{corp.badge}</div>
+                    <div style={{ fontSize:"1.2rem", fontWeight:"bold" }}>{corp.name}</div>
                   </button>
                 ))}
               </div>
@@ -70,65 +84,253 @@
           );
         }
 
+        // --- BIBLIOTECA Y LECTOR DE PDF ---
         function Library({ corp, onStartTest, onBack }) {
-          const [supuestos, setSupuestos] = useState(() => { const saved = loadSupuestos(corp); return saved.length > 0 ? saved : [DEMO]; });
+          const [supuestos, setSupuestos] = useState(() => loadSupuestos(corp));
+          const [status, setStatus] = useState("");
+          const [showApiConfig, setShowApiConfig] = useState(false);
+          const [apiKeyInput, setApiKeyInput] = useState(getApiKey());
           const c = CORPS[corp];
+          const fileRef = useRef(null);
+
+          const handleSaveKey = () => { saveApiKey(apiKeyInput); setShowApiConfig(false); alert("Clave guardada"); };
+
+          const deleteTest = (id) => {
+              const filtrados = supuestos.filter(s => s.id !== id);
+              setSupuestos(filtrados);
+              saveSupuestos(corp, filtrados);
+          };
+
+          // Extraer PDF y enviarlo a la IA
+          const handleFileUpload = async (e) => {
+              const file = e.target.files[0];
+              if(!file) return;
+              if(!getApiKey()) return alert("Por favor, configura tu Clave API primero (⚙️).");
+
+              try {
+                  setStatus("Leyendo PDF...");
+                  const arrayBuffer = await file.arrayBuffer();
+                  
+                  // Configurar PDF.js
+                  const pdfjsLib = window['pdfjs-dist/build/pdf'];
+                  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                  
+                  const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+                  let fullText = "";
+                  for(let i = 1; i <= pdf.numPages; i++) {
+                      const page = await pdf.getPage(i);
+                      const textContent = await page.getTextContent();
+                      fullText += textContent.items.map(s => s.str).join(" ") + "\n";
+                  }
+
+                  setStatus("Analizando test con IA...");
+                  const systemPrompt = `Eres un extractor de exámenes. Extrae el caso práctico y TODAS las preguntas. Devuelve SOLO un JSON válido con esta estructura exacta:
+                  {"titulo":"Título inventado","enunciado":"texto completo del caso práctico","preguntas":[{"texto":"pregunta?","opciones":["A) ...","B) ...","C) ...","D) ..."],"correcta":0,"explicacion":"explicación breve"}]} 
+                  El campo 'correcta' es el índice de 0 a 3.`;
+
+                  const iaResponse = await callClaude(systemPrompt, `Extrae el JSON de este documento:\n\n${fullText}`);
+                  
+                  // Limpiar posible texto basura antes o después del JSON
+                  const jsonStr = iaResponse.substring(iaResponse.indexOf('{'), iaResponse.lastIndexOf('}') + 1);
+                  const nuevoSupuesto = JSON.parse(jsonStr);
+                  nuevoSupuesto.id = Date.now();
+
+                  const nuevaLista = [nuevoSupuesto, ...supuestos];
+                  setSupuestos(nuevaLista);
+                  saveSupuestos(corp, nuevaLista);
+                  setStatus("");
+                  
+              } catch(err) {
+                  console.error(err);
+                  setStatus(`Error: ${err.message}`);
+              }
+          };
+
           return (
-            <div style={{ padding:"2rem" }}>
-              <button onClick={onBack} style={{ color:"#888", background:"none", border:"none", cursor:"pointer" }}>← Volver</button>
-              <h2>Biblioteca - {c.name}</h2>
+            <div style={{ padding:"2rem", maxWidth: 800, margin: "0 auto" }}>
+              <div style={{ display:"flex", justifyContent:"space-between", marginBottom:"2rem" }}>
+                  <button onClick={onBack} style={{ color:"#888", background:"none", border:"none", cursor:"pointer" }}>← Cambiar Cuerpo</button>
+                  <button onClick={() => setShowApiConfig(!showApiConfig)} style={{ background:"none", border:"none", fontSize:"1.5rem", cursor:"pointer" }} title="Configurar API">⚙️</button>
+              </div>
+
+              {showApiConfig && (
+                  <div style={{ background:"#1a1a24", padding:"1rem", borderRadius:8, marginBottom:"2rem", border:`1px solid ${c.color}` }}>
+                      <h3>Configuración de IA</h3>
+                      <input type="password" value={apiKeyInput} onChange={e=>setApiKeyInput(e.target.value)} placeholder="Pega tu API Key de Anthropic aquí..." style={{ width:"100%", padding:"0.8rem", borderRadius:4, border:"none", marginBottom:"1rem" }} />
+                      <button onClick={handleSaveKey} style={{ background:c.color, border:"none", padding:"0.5rem 1rem", borderRadius:4, fontWeight:"bold", cursor:"pointer" }}>Guardar Clave</button>
+                  </div>
+              )}
+
+              <h2 style={{ color: c.color }}>Biblioteca - {c.name}</h2>
+              
+              <div style={{ background:"rgba(255,255,255,0.05)", border:"2px dashed #444", borderRadius:8, padding:"2rem", textAlign:"center", marginBottom:"2rem", cursor:"pointer" }} onClick={() => fileRef.current.click()}>
+                  <input type="file" ref={fileRef} accept=".pdf" style={{ display:"none" }} onChange={handleFileUpload} />
+                  <div style={{ fontSize:"2rem", marginBottom:"1rem" }}>📄</div>
+                  {status ? <div style={{ color:c.color }}>{status}</div> : <div>Toca para subir un PDF y generar un test con IA</div>}
+              </div>
+
               <div style={{ display:"flex", flexDirection:"column", gap:"1rem" }}>
-                {supuestos.map((s, i) => (
-                  <div key={i} style={{ background:"#161618", padding:"1.5rem", borderRadius:8, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                    <div><strong>{s.titulo}</strong><br/><small>{s.preguntas.length} preguntas</small></div>
-                    <button onClick={() => onStartTest(s)} style={{ background:c.color, border:"none", padding:"0.5rem 1rem", borderRadius:4, cursor:"pointer", fontWeight:"bold" }}>Iniciar Test</button>
+                {supuestos.map((s) => (
+                  <div key={s.id} style={{ background:"#161618", padding:"1.5rem", borderRadius:8, display:"flex", justifyContent:"space-between", alignItems:"center", borderLeft:`4px solid ${c.color}` }}>
+                    <div>
+                        <div style={{ fontWeight:"bold", fontSize:"1.1rem", marginBottom:"0.5rem" }}>{s.titulo}</div>
+                        <div style={{ color:"#888", fontSize:"0.9rem" }}>{s.preguntas.length} preguntas</div>
+                    </div>
+                    <div style={{ display:"flex", gap:"1rem" }}>
+                        <button onClick={() => deleteTest(s.id)} style={{ background:"#dc2626", border:"none", padding:"0.5rem 1rem", borderRadius:4, color:"#fff", cursor:"pointer" }}>Borrar</button>
+                        <button onClick={() => onStartTest(s)} style={{ background:c.color, border:"none", padding:"0.5rem 1rem", borderRadius:4, cursor:"pointer", fontWeight:"bold", color:"#000" }}>Iniciar</button>
+                    </div>
                   </div>
                 ))}
+                {supuestos.length === 0 && <p style={{ textAlign:"center", color:"#666" }}>No hay supuestos. Sube un PDF para empezar.</p>}
               </div>
             </div>
           );
         }
 
-        function TestView({ corp, supuesto, onBack }) {
+        // --- VISTA DEL TEST Y CONSULTA A LA IA ---
+        function TestView({ corp, supuestoOriginal, onBack, onUpdateSupuesto }) {
+          const [supuesto, setSupuesto] = useState(supuestoOriginal);
           const [answers, setAnswers] = useState({});
-          const [submitted, setSubmitted] = useState(false);
+          const [chatTarget, setChatTarget] = useState(null); // Índice de la pregunta consultada
+          const [chatInput, setChatInput] = useState("");
+          const [chatLog, setChatLog] = useState([]);
+          const [loadingChat, setLoadingChat] = useState(false);
           const c = CORPS[corp];
-          const score = supuesto.preguntas.filter((p,i) => answers[i] === p.correcta).length;
+
+          // Manejar la conversación con la IA
+          const handleSendChat = async () => {
+              if(!chatInput.trim()) return;
+              const qIndex = chatTarget;
+              const preguntaActual = supuesto.preguntas[qIndex];
+              
+              const userMsg = chatInput;
+              setChatInput("");
+              setChatLog(prev => [...prev, { role: "user", text: userMsg }]);
+              setLoadingChat(true);
+
+              try {
+                  const systemPrompt = `Eres un instructor experto en legislación policial española. 
+                  El alumno tiene dudas sobre esta pregunta del supuesto: "${preguntaActual.texto}". 
+                  Las opciones son: ${preguntaActual.opciones.join(" | ")}. 
+                  La respuesta marcada como correcta en el sistema es la ${preguntaActual.correcta} (${preguntaActual.opciones[preguntaActual.correcta]}).
+                  
+                  Si el alumno tiene razón y la respuesta correcta debería ser otra, explica por qué y OBLIGATORIAMENTE incluye al final de tu respuesta esta etiqueta exacta: JSON_CAMBIO:{"nueva_correcta": X} donde X es el número de la nueva opción correcta (0, 1, 2 o 3).`;
+
+                  const iaResponse = await callClaude(systemPrompt, userMsg);
+                  setChatLog(prev => [...prev, { role: "ia", text: iaResponse }]);
+
+                  // Detectar si la IA ordenó cambiar la respuesta en tiempo real
+                  const match = iaResponse.match(/JSON_CAMBIO:\{"nueva_correcta":\s*(\d)\}/);
+                  if (match) {
+                      const nuevoIndice = parseInt(match[1]);
+                      // Actualizar el estado actual del test
+                      const nuevoSupuesto = { ...supuesto };
+                      nuevoSupuesto.preguntas[qIndex].correcta = nuevoIndice;
+                      setSupuesto(nuevoSupuesto);
+                      // Guardar en la biblioteca (localStorage)
+                      onUpdateSupuesto(nuevoSupuesto);
+                  }
+
+              } catch(err) {
+                  setChatLog(prev => [...prev, { role: "ia", text: "Error: " + err.message }]);
+              } finally {
+                  setLoadingChat(false);
+              }
+          };
 
           return (
-            <div style={{ padding:"2rem" }}>
-              <div style={{ display:"flex", justifyContent:"space-between", position:"sticky", top:0, background:"#09090f", padding:"1rem 0" }}>
-                <button onClick={onBack} style={{ color:"#888", border:"none", background:"none" }}>← Salir</button>
-                {submitted && <h3>Resultado: {score}/{supuesto.preguntas.length}</h3>}
-              </div>
-              <h2>{supuesto.titulo}</h2>
-              <p style={{ background:"#1a1a2e", padding:"1rem", borderRadius:8 }}>{supuesto.enunciado}</p>
-              {supuesto.preguntas.map((q, qIdx) => (
-                <div key={qIdx} style={{ marginBottom:"2rem", borderBottom:"1px solid #222", paddingBottom:"1rem" }}>
-                  <p><strong>{qIdx+1}. {q.texto}</strong></p>
-                  {q.opciones.map((opt, optIdx) => (
-                    <button key={optIdx} onClick={() => !submitted && setAnswers({...answers, [qIdx]: optIdx})}
-                      style={{ display:"block", width:"100%", textAlign:"left", padding:"0.8rem", margin:"0.3rem 0", borderRadius:4, cursor:submitted?"default":"pointer",
-                        background: answers[qIdx] === optIdx ? (submitted ? (optIdx === q.correcta ? "#16a34a" : "#dc2626") : c.color) : "#161618",
-                        border: "1px solid #333", color: answers[qIdx] === optIdx ? "#000" : "#ccc" }}>
-                      {opt}
-                    </button>
+            <div style={{ display:"flex", height:"100vh", overflow:"hidden" }}>
+                
+              {/* ZONA IZQUIERDA: Test Principal */}
+              <div style={{ flex: 1, overflowY:"auto", padding:"2rem", position:"relative" }}>
+                  <button onClick={onBack} style={{ color:"#888", border:"none", background:"none", cursor:"pointer", marginBottom:"1rem" }}>← Volver a Biblioteca</button>
+                  
+                  {/* ENUNCIADO FIJO (STICKY) */}
+                  <div style={{ position:"sticky", top:0, zIndex:10, background:"#1a1a24", padding:"1.5rem", borderRadius:8, borderLeft:`4px solid ${c.color}`, boxShadow:"0 10px 20px rgba(0,0,0,0.5)", marginBottom:"2rem" }}>
+                      <h2 style={{ margin:"0 0 1rem 0" }}>{supuesto.titulo}</h2>
+                      <p style={{ margin:0, color:"#ccc", lineHeight:"1.6" }}>{supuesto.enunciado}</p>
+                  </div>
+
+                  {/* PREGUNTAS */}
+                  {supuesto.preguntas.map((q, qIdx) => (
+                    <div key={qIdx} style={{ background:"rgba(255,255,255,0.02)", padding:"1.5rem", borderRadius:8, marginBottom:"1.5rem", border:"1px solid #333" }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+                          <p style={{ fontSize:"1.1rem", margin:"0 0 1rem 0" }}><strong>{qIdx+1}. {q.texto}</strong></p>
+                          <button onClick={() => { setChatTarget(qIdx); setChatLog([]); }} style={{ background:`${c.color}22`, color:c.color, border:`1px solid ${c.color}`, padding:"0.4rem 0.8rem", borderRadius:4, cursor:"pointer", whiteSpace:"nowrap" }}>
+                              🤖 Consultar IA
+                          </button>
+                      </div>
+                      
+                      {q.opciones.map((opt, optIdx) => {
+                          const isSelected = answers[qIdx] === optIdx;
+                          const isCorrect = q.correcta === optIdx;
+                          return (
+                            <button key={optIdx} onClick={() => setAnswers({...answers, [qIdx]: optIdx})}
+                              style={{ display:"block", width:"100%", textAlign:"left", padding:"1rem", margin:"0.5rem 0", borderRadius:6, cursor:"pointer", transition:"0.2s",
+                                background: isSelected ? (isCorrect ? "#16a34a" : "#dc2626") : "#161618",
+                                border: `1px solid ${isSelected ? (isCorrect ? "#22c55e" : "#ef4444") : "#333"}`, 
+                                color: isSelected ? "#fff" : "#ccc" }}>
+                              {opt}
+                            </button>
+                          );
+                      })}
+                      {answers[qIdx] !== undefined && (
+                          <div style={{ marginTop:"1rem", padding:"1rem", background:"rgba(255,255,255,0.05)", borderRadius:6, color:"#aaa", fontSize:"0.9rem" }}>
+                              <strong>Explicación:</strong> {q.explicacion}
+                          </div>
+                      )}
+                    </div>
                   ))}
-                  {submitted && <p style={{ fontSize:"0.8rem", color:"#888" }}>{q.explicacion}</p>}
-                </div>
-              ))}
-              {!submitted && <button onClick={() => setSubmitted(true)} style={{ width:"100%", padding:"1rem", background:c.color, border:"none", borderRadius:6, fontWeight:"bold" }}>Finalizar</button>}
+              </div>
+
+              {/* ZONA DERECHA: Chat Drawer (Se abre si se selecciona una pregunta) */}
+              {chatTarget !== null && (
+                  <div style={{ width: 400, background:"#12121a", borderLeft:"1px solid #333", display:"flex", flexDirection:"column" }}>
+                      <div style={{ padding:"1.5rem", borderBottom:"1px solid #333", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                          <strong style={{ color: c.color }}>Asistente Legal (Preg. {chatTarget + 1})</strong>
+                          <button onClick={() => setChatTarget(null)} style={{ background:"none", border:"none", color:"#fff", fontSize:"1.5rem", cursor:"pointer" }}>×</button>
+                      </div>
+                      
+                      <div style={{ flex:1, overflowY:"auto", padding:"1.5rem", display:"flex", flexDirection:"column", gap:"1rem" }}>
+                          <div style={{ background:"#1a1a24", padding:"1rem", borderRadius:8, color:"#ccc", fontSize:"0.9rem" }}>
+                              Dime por qué crees que la respuesta es incorrecta o hazme cualquier consulta sobre legislación policial relacionada con este supuesto. Si tienes razón, corregiré la pregunta al instante.
+                          </div>
+                          {chatLog.map((msg, i) => (
+                              <div key={i} style={{ alignSelf: msg.role==="user"?"flex-end":"flex-start", background: msg.role==="user"?`${c.color}44`:"#222", padding:"0.8rem 1rem", borderRadius:8, maxWidth:"90%", fontSize:"0.9rem" }}>
+                                  {msg.text.replace(/JSON_CAMBIO:\{.*?\}/,"(✅ He actualizado la respuesta correcta en el test según tu argumento).")}
+                              </div>
+                          ))}
+                          {loadingChat && <div style={{ color:"#888", fontSize:"0.9rem" }}>La IA está pensando...</div>}
+                      </div>
+
+                      <div style={{ padding:"1.5rem", borderTop:"1px solid #333", display:"flex", gap:"0.5rem" }}>
+                          <input type="text" value={chatInput} onChange={e=>setChatInput(e.target.value)} onKeyPress={e => e.key==='Enter' && handleSendChat()} placeholder="Escribe tu argumento..." style={{ flex:1, padding:"0.8rem", borderRadius:4, border:"1px solid #444", background:"#09090f", color:"#fff" }} />
+                          <button onClick={handleSendChat} style={{ background:c.color, border:"none", padding:"0 1rem", borderRadius:4, cursor:"pointer", fontWeight:"bold" }}>Enviar</button>
+                      </div>
+                  </div>
+              )}
             </div>
           );
         }
 
+        // --- ENRUTADOR PRINCIPAL ---
         function App() {
           const [screen, setScreen] = useState("home");
           const [corp, setCorp] = useState(null);
           const [supuesto, setSupuesto] = useState(null);
+
+          const handleUpdateSupuesto = (supuestoActualizado) => {
+              setSupuesto(supuestoActualizado);
+              // Actualizar en localStorage
+              const lista = loadSupuestos(corp);
+              const listaNueva = lista.map(s => s.id === supuestoActualizado.id ? supuestoActualizado : s);
+              saveSupuestos(corp, listaNueva);
+          };
+
           if (screen==="home") return <CorpSelector onSelect={id => { setCorp(id); setScreen("library"); }} />;
           if (screen==="library") return <Library corp={corp} onBack={() => setScreen("home")} onStartTest={s => { setSupuesto(s); setScreen("test"); }} />;
-          if (screen==="test") return <TestView corp={corp} supuesto={supuesto} onBack={() => setScreen("library")} />;
+          if (screen==="test") return <TestView corp={corp} supuestoOriginal={supuesto} onBack={() => setScreen("library")} onUpdateSupuesto={handleUpdateSupuesto} />;
         }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
