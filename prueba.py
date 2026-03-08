@@ -15,7 +15,7 @@ const DEMO = {
   ],
 };
 
-// ─── Persistencia por cuerpo ────────────────────────────
+# Persistencia por cuerpo
 const STORAGE_KEY = (corp) => `academia_supuestos_${corp}`;
 
 const loadSupuestos = (corp) => {
