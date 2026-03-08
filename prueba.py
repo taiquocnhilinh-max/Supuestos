@@ -29,7 +29,7 @@ const saveSupuestos = (corp, list) => {
   try { localStorage.setItem(STORAGE_KEY(corp), JSON.stringify(list)); } catch {}
 };
 
-// ─── Marco normativo para el asistente ──────────────────
+# Marco normativo para el asistente
 const MARCO_NORMATIVO = `Marco normativo aplicable (cita siempre artículos concretos):
 - Constitución Española (CE): arts. 17 (libertad), 18 (intimidad), 24 (tutela judicial), 25 (legalidad penal).
 - Ley Orgánica 2/1986, de Fuerzas y Cuerpos de Seguridad (LOFCS): arts. 5 (principios de actuación), 11 (funciones), 52 y ss. (Policía Local).
